@@ -1,122 +1,66 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
-	"os"
-	"strings"
-	"time"
+	"sync"
 )
 
-// Структура для представления URL
-type Item struct {
-	Name string
-	Date time.Time
-	Tags string
-	Link string
+type Cache interface {
+	Get(k string) (string, bool)
+	Set(k, v string)
+}
+
+var _ Cache = (*cacheImpl)(nil)
+
+// Кэш с использованием мьютекса для безопасного доступа к данным
+type cacheImpl struct {
+	mu    sync.Mutex
+	store map[string]string
+}
+
+func newCacheImpl() *cacheImpl {
+	return &cacheImpl{
+		store: make(map[string]string),
+	}
+}
+
+func (c *cacheImpl) Get(k string) (string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	v, ok := c.store[k]
+	return v, ok
+}
+
+func (c *cacheImpl) Set(k, v string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.store[k] = v
+}
+
+func newDbImpl(cache Cache) *dbImpl {
+	return &dbImpl{cache: cache, dbs: map[string]string{"hello": "world", "test": "test"}}
+}
+
+type dbImpl struct {
+	cache Cache
+	dbs   map[string]string
+}
+
+func (d *dbImpl) Get(k string) (string, bool) {
+	v, ok := d.cache.Get(k)
+	if ok {
+		return fmt.Sprintf("answer from cache: key: %s, val: %s", k, v), ok
+	}
+
+	v, ok = d.dbs[k]
+	return fmt.Sprintf("answer from dbs: key: %s, val: %s", k, v), ok
 }
 
 func main() {
-	var items []Item
-
-	fmt.Println("Коллекция URL")
-	fmt.Println("Введите 'A' для добавления, 'D' для удаления, 'L' для вывода списка, 'Q' для выхода")
-
-	scanner := bufio.NewScanner(os.Stdin)
-
-	for {
-		fmt.Print("Введите ваш выбор: ")
-		scanner.Scan()
-		input := scanner.Text()
-
-		switch strings.ToUpper(input) {
-		case "A":
-			addItem(&items)
-		case "D":
-			deleteItem(&items)
-		case "L":
-			listItems(items)
-		case "Q":
-			fmt.Println("Выход...")
-			os.Exit(0)
-		default:
-			fmt.Println("Неверная опция. Пожалуйста, попробуйте еще раз.")
-		}
-	}
+	c := newCacheImpl()
+	db := newDbImpl(c)
+	fmt.Println(db.Get("test"))
+	fmt.Println(db.Get("hello"))
 }
-
-// Функция для добавления нового URL
-func addItem(items *[]Item) {
-	fmt.Println("Добавление нового URL:")
-
-	name := getInput("Введите название: ")
-	tags := getInput("Введите теги (через запятую): ")
-	link := getInput("Введите URL: ")
-
-	newItem := Item{
-		Name: name,
-		Date: time.Now(),
-		Tags: tags,
-		Link: link,
-	}
-
-	*items = append(*items, newItem)
-
-	fmt.Println("URL успешно добавлен!")
-}
-
-// Функция для удаления URL
-func deleteItem(items *[]Item) {
-	if len(*items) == 0 {
-		fmt.Println("Нет URL для удаления.")
-		return
-	}
-
-	fmt.Println("Выберите индекс для удаления:")
-	listItems(*items)
-
-	index := getIndex(len(*items))
-	*items = append((*items)[:index], (*items)[index+1:]...)
-
-	fmt.Println("URL успешно удален!")
-}
-
-// Функция для вывода списка URL
-func listItems(items []Item) {
-	if len(items) == 0 {
-		fmt.Println("Нет URL в коллекции.")
-		return
-	}
-
-	fmt.Println("Коллекция URL:")
-	for i, item := range items {
-		fmt.Printf("%d. %s - Теги: %s - Ссылка: %s\n", i+1, item.Name, item.Tags, item.Link)
-	}
-}
-
-// Функция для получения ввода от пользователя
-func getInput(prompt string) string {
-	fmt.Print(prompt + " ")
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Scan()
-	return scanner.Text()
-}
-
-// Функция для получения индекса элемента для удаления
-func getIndex(maxIndex int) int {
-	var index int
-
-	for {
-		indexInput := getInput("Введите индекс: ")
-		_, err := fmt.Sscanf(indexInput, "%d", &index)
-
-		if err == nil && index > 0 && index <= maxIndex {
-			break
-		}
-
-		fmt.Println("Неверный индекс. Пожалуйста, попробуйте еще раз.")
-	}
-
-	return index - 1
-}
-
